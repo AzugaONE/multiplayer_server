@@ -7,9 +7,12 @@ console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
 // ===== CONFIG =====
 const MAX_PLAYERS = 5;
+const MATCH_TIMEOUT = 10 * 1000;
+
+let queue = [];
+let matchTimer = null;
 
 // ===== PALABRAS =====
-// ====== PALABRAS ======
 const WORD_PAIRS = [
   ["GATO", "PERRO"],
   ["PLAYA", "PISCINA"],
@@ -59,9 +62,7 @@ const WORD_PAIRS = [
   ["APROBADO", "JALADO"]
 ];
 
-// ===== MATCHMAKING =====
-let queue = [];
-
+// ===== CONNECTION =====
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
@@ -69,9 +70,12 @@ wss.on("connection", (ws) => {
     if (!queue.includes(ws)) {
       queue.push(ws);
       broadcastCount();
+
+      if (queue.length === 1) startMatchTimer();
     }
 
     if (queue.length === MAX_PLAYERS) {
+      clearMatchTimer();
       startGame();
     }
   });
@@ -84,8 +88,37 @@ wss.on("connection", (ws) => {
 
 // ===== FUNCIONES =====
 
+function startMatchTimer() {
+  if (matchTimer) return;
+
+  matchTimer = setTimeout(() => {
+    console.log("⏰ Tiempo agotado, rellenando con bots");
+    fillWithBots();
+    startGame();
+  }, MATCH_TIMEOUT);
+}
+
+function clearMatchTimer() {
+  if (matchTimer) {
+    clearTimeout(matchTimer);
+    matchTimer = null;
+  }
+}
+
+function fillWithBots() {
+  const missing = MAX_PLAYERS - queue.length;
+
+  for (let i = 0; i < missing; i++) {
+    queue.push({ isBot: true });
+  }
+
+  console.log(`🤖 ${missing} bots añadidos`);
+}
+
 function broadcastCount() {
   queue.forEach((player) => {
+    if (player.isBot) return;
+
     player.send(
       JSON.stringify({
         type: "count",
@@ -98,36 +131,34 @@ function broadcastCount() {
 
 function startGame() {
   console.log("🎮 Iniciando partida");
+  clearMatchTimer();
 
-  // Elegir palabras
   const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
   const detectiveWord = pair[0];
   const impostorWord = pair[1];
 
-  // Crear roles (3 detectives, 2 impostores)
   const roles = [
     "detective",
     "detective",
     "detective",
     "impostor",
     "impostor",
-  ];
-
-  // Mezclar roles
-  roles.sort(() => Math.random() - 0.5);
+  ].sort(() => Math.random() - 0.5);
 
   queue.forEach((player, index) => {
+    if (player.isBot) return;
+
     const role = roles[index];
     const word = role === "impostor" ? impostorWord : detectiveWord;
 
     player.send(
       JSON.stringify({
         type: "game_start",
-        role: role,
-        word: word,
+        role,
+        word,
       })
     );
   });
 
-  queue = []; // limpiar cola
+  queue = [];
 }
