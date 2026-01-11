@@ -3,100 +3,131 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 3000;
 const wss = new WebSocket.Server({ port: PORT });
 
-const rooms = {};
+console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
+
+// ===== CONFIG =====
 const MAX_PLAYERS = 5;
 
-console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
+// ===== PALABRAS =====
+// ====== PALABRAS ======
+const WORD_PAIRS = [
+  ["GATO", "PERRO"],
+  ["PLAYA", "PISCINA"],
+  ["PIZZA", "HAMBURGUESA"],
+  ["COCA", "PEPSI"],
+  ["FUEGO", "HIELO"],
+  ["MESSI", "RONALDO"],
+  ["BOLIVIA", "MAR"],
+  ["VENEZUELA", "MADURO"],
+  ["ARGENTINA", "INFLACIÓN"],
+  ["CHILE", "TERREMOTO"],
+
+  ["LA COBRA", "BUEEE"],
+  ["SPREEN", "MICTIA"],
+  ["DAVO", "ES COMO UN MUNDIAL PERO DE CLUBES"],
+  ["IBAI", "VELADA"],
+  ["AURONPLAY", "BROMA"],
+
+  ["SILLA", "MESA"],
+  ["CUCHARA", "TENEDOR"],
+  ["ZAPATO", "PANTUFLA"],
+  ["MOCHILA", "MALETA"],
+  ["CUADERNO", "LIBRO"],
+
+  ["PIZZA", "EMPANADA"],
+  ["SALCHIPAPA", "PAPAS FRITAS"],
+  ["HELADO", "HIELO"],
+  ["PAN", "MARRAQUETA"],
+  ["ARROZ", "FIDEO"],
+
+  ["BATMAN", "SUPERMAN"],
+  ["SPIDERMAN", "HOMBRE ARAÑA"],
+  ["GOKU", "VEGETA"],
+  ["NARUTO", "SASUKE"],
+  ["THANOS", "GUANTE"],
+
+  ["WIFI", "DATOS"],
+  ["ERROR", "BUG"],
+  ["HACKEAR", "COPIAR"],
+  ["LIKE", "FOLLOW"],
+  ["CRINGE", "PENA AJENA"],
+
+  ["EXAMEN", "PRUEBA"],
+  ["TAREA", "CASTIGO"],
+  ["RECREO", "DESCANSO"],
+  ["PROFESOR", "PROFE"],
+  ["APROBADO", "JALADO"]
+];
+
+// ===== MATCHMAKING =====
+let queue = [];
 
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
-  let currentRoom = null;
+  ws.on("message", () => {
+    if (!queue.includes(ws)) {
+      queue.push(ws);
+      broadcastCount();
+    }
 
-  ws.on("message", (data) => {
-    try {
-      const message = JSON.parse(data.toString());
-
-      if (message.type === "join_room") {
-        const roomId = message.roomId || "default";
-
-        if (!rooms[roomId]) {
-          rooms[roomId] = {
-            players: new Set(),
-            started: false,
-          };
-        }
-
-        const room = rooms[roomId];
-
-        // ❌ Si la partida ya empezó
-        if (room.started) {
-          ws.send(JSON.stringify({ type: "game_already_started" }));
-          return;
-        }
-
-        // ❌ Room llena
-        if (room.players.size >= MAX_PLAYERS) {
-          ws.send(JSON.stringify({ type: "room_full" }));
-          return;
-        }
-
-        room.players.add(ws);
-        currentRoom = roomId;
-
-        console.log(
-          `✅ Jugador unido a room ${roomId} (${room.players.size}/${MAX_PLAYERS})`
-        );
-
-        broadcastRoomCount(roomId);
-
-        // 🚀 INICIAR PARTIDA
-        if (room.players.size === MAX_PLAYERS) {
-          room.started = true;
-          broadcast(roomId, {
-            type: "start_game",
-          });
-        }
-      }
-    } catch (e) {
-      console.error("❌ Error:", e);
+    if (queue.length === MAX_PLAYERS) {
+      startGame();
     }
   });
 
   ws.on("close", () => {
-    if (currentRoom && rooms[currentRoom]) {
-      rooms[currentRoom].players.delete(ws);
-
-      if (rooms[currentRoom].players.size === 0) {
-        delete rooms[currentRoom];
-        console.log(`🗑️ Room ${currentRoom} eliminada`);
-      } else {
-        broadcastRoomCount(currentRoom);
-      }
-    }
+    queue = queue.filter((p) => p !== ws);
+    broadcastCount();
   });
 });
 
 // ===== FUNCIONES =====
 
-function broadcastRoomCount(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-
-  broadcast(roomId, {
-    type: "room_count",
-    count: room.players.size,
-    max: MAX_PLAYERS,
+function broadcastCount() {
+  queue.forEach((player) => {
+    player.send(
+      JSON.stringify({
+        type: "count",
+        current: queue.length,
+        max: MAX_PLAYERS,
+      })
+    );
   });
 }
 
-function broadcast(roomId, message) {
-  const room = rooms[roomId];
-  if (!room) return;
+function startGame() {
+  console.log("🎮 Iniciando partida");
 
-  room.players.forEach((player) => {
-    if (player.readyState === WebSocket.OPEN) {
-      player.send(JSON.stringify(message));
-    }
+  // Elegir palabras
+  const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+  const detectiveWord = pair[0];
+  const impostorWord = pair[1];
+
+  // Crear roles (3 detectives, 2 impostores)
+  const roles = [
+    "detective",
+    "detective",
+    "detective",
+    "impostor",
+    "impostor",
+  ];
+
+  // Mezclar roles
+  roles.sort(() => Math.random() - 0.5);
+
+  queue.forEach((player, index) => {
+    const role = roles[index];
+    const word = role === "impostor" ? impostorWord : detectiveWord;
+
+    player.send(
+      JSON.stringify({
+        type: "game_start",
+        role: role,
+        word: word,
+      })
+    );
   });
+
+  queue = []; // limpiar cola
 }
