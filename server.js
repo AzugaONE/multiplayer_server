@@ -7,7 +7,7 @@ console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
 // ===== CONFIG =====
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 60 * 1000;
+const MATCH_TIMEOUT = 20 * 1000;
 
 let queue = [];
 let matchTimer = null;
