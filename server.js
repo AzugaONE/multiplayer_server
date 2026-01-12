@@ -2,8 +2,13 @@ const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3000;
 const wss = new WebSocket.Server({ port: PORT });
-
 console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
+
+// 🔹 Mostrar jugadores activos cada 1 minuto
+setInterval(() => {  
+  console.log(`🌐 Jugadores activos: ${wss.clients.size}`);  
+}, 60000);
+
 
 // ===== CONFIG =====
 const MAX_PLAYERS = 5;
