@@ -2,22 +2,12 @@ const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3000;
 const wss = new WebSocket.Server({ port: PORT });
+
 console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
-// 🔹 Mostrar jugadores activos cada 1 minuto
-setInterval(() => {  
-  console.log(`🌐 Jugadores activos: ${wss.clients.size}`);  
-}, 60000);
-
-
-// ===== CONFIG =====
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 10 * 1000;
 
-let queue = [];
-let matchTimer = null;
-
-// ===== PALABRAS =====
+// PALABRAS (solo de ejemplo)
 const WORD_PAIRS = [
   ["GATO", "PERRO"],
   ["PLAYA", "PISCINA"],
@@ -67,21 +57,48 @@ const WORD_PAIRS = [
   ["APROBADO", "JALADO"]
 ];
 
-// ===== CONNECTION =====
+// ===== MATCHMAKING =====
+let queue = [];
+
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
-  ws.on("message", () => {
-    if (!queue.includes(ws)) {
+  ws.on("message", (msg) => {
+    const data = JSON.parse(msg);
+
+    // ===== Contador =====
+    if (data.type === "join" && !queue.includes(ws)) {
       queue.push(ws);
       broadcastCount();
 
-      if (queue.length === 1) startMatchTimer();
+      if (queue.length === MAX_PLAYERS) {
+        startGame();
+      }
     }
 
-    if (queue.length === MAX_PLAYERS) {
-      clearMatchTimer();
-      startGame();
+    // ===== Palabra enviada por jugador =====
+    if (data.type === "submit_word") {
+      const game = ws.game;
+      if (!game) return;
+
+      const { username, word } = data;
+      game.words.push({ username, word });
+
+      // Avisar a todos los jugadores de la partida
+      game.players.forEach((p) => {
+        p.send(JSON.stringify({
+          type: "update_words",
+          words: game.words
+        }));
+      });
+
+      // Cambiar turno
+      game.currentTurn++;
+      if (game.currentTurn < game.players.length) {
+        game.players[game.currentTurn].send(JSON.stringify({
+          type: "your_turn"
+        }));
+      }
     }
   });
 
@@ -91,79 +108,51 @@ wss.on("connection", (ws) => {
   });
 });
 
-// ===== FUNCIONES =====
-
-function startMatchTimer() {
-  if (matchTimer) return;
-
-  matchTimer = setTimeout(() => {
-    console.log("⏰ Tiempo agotado, rellenando con bots");
-    fillWithBots();
-    startGame();
-  }, MATCH_TIMEOUT);
-}
-
-function clearMatchTimer() {
-  if (matchTimer) {
-    clearTimeout(matchTimer);
-    matchTimer = null;
-  }
-}
-
-function fillWithBots() {
-  const missing = MAX_PLAYERS - queue.length;
-
-  for (let i = 0; i < missing; i++) {
-    queue.push({ isBot: true });
-  }
-
-  console.log(`🤖 ${missing} bots añadidos`);
-}
-
 function broadcastCount() {
   queue.forEach((player) => {
-    if (player.isBot) return;
-
-    player.send(
-      JSON.stringify({
-        type: "count",
-        current: queue.length,
-        max: MAX_PLAYERS,
-      })
-    );
+    player.send(JSON.stringify({
+      type: "count",
+      current: queue.length,
+      max: MAX_PLAYERS
+    }));
   });
 }
 
+// ===== INICIO DE PARTIDA =====
 function startGame() {
   console.log("🎮 Iniciando partida");
-  clearMatchTimer();
 
   const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
   const detectiveWord = pair[0];
   const impostorWord = pair[1];
 
-  const roles = [
-    "detective",
-    "detective",
-    "detective",
-    "impostor",
-    "impostor",
-  ].sort(() => Math.random() - 0.5);
+  const roles = ["detective","detective","detective","impostor","impostor"].sort(() => Math.random() - 0.5);
+
+  // Crear objeto de juego
+  const game = {
+    players: [...queue],
+    currentTurn: 0,
+    words: []
+  };
 
   queue.forEach((player, index) => {
-    if (player.isBot) return;
+    player.role = roles[index];
+    player.word = roles[index] === "impostor" ? impostorWord : detectiveWord;
+    player.game = game;
 
-    const role = roles[index];
-    const word = role === "impostor" ? impostorWord : detectiveWord;
-
-    player.send(
-      JSON.stringify({
-        type: "game_start",
-        role,
-        word,
-      })
-    );
+    // Avisar inicio de partida
+    player.send(JSON.stringify({
+      type: "game_start",
+      role: player.role,
+      word: player.word,
+      username: "Jugador" + (index + 1) // por ahora usamos un nombre dummy
+    }));
   });
+
+  // Avisar el primer turno
+  game.players[game.currentTurn].send(JSON.stringify({
+    type: "your_turn"
+  }));
 
   queue = [];
 }
