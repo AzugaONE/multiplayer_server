@@ -3,7 +3,7 @@ const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 60 * 1000; // 1 minuto
+const MATCH_TIMEOUT = 20 * 1000; // 1 minuto
 
 const wss = new WebSocket.Server({ port: PORT });
 console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
