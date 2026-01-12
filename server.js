@@ -5,14 +5,12 @@ const wss = new WebSocket.Server({ port: PORT });
 
 console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
-// ===== CONFIG =====
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 20 * 1000;
+const MATCH_TIMEOUT = 20000;
 
 let queue = [];
 let matchTimer = null;
 
-// ===== PALABRAS =====
 const WORD_PAIRS = [
   ["GATO", "PERRO"],
   ["PLAYA", "PISCINA"],
@@ -62,37 +60,39 @@ const WORD_PAIRS = [
   ["APROBADO", "JALADO"]
 ];
 
-// ===== CONNECTION =====
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
-  ws.on("message", () => {
-    if (!queue.includes(ws)) {
-      queue.push(ws);
+  ws.on("message", (msg) => {
+    const data = JSON.parse(msg);
+
+    if (data.type === "join") {
+      queue.push({
+        socket: ws,
+        username: data.username || "Jugador",
+        isBot: false,
+      });
+
       broadcastCount();
 
       if (queue.length === 1) startMatchTimer();
-    }
-
-    if (queue.length === MAX_PLAYERS) {
-      clearMatchTimer();
-      startGame();
+      if (queue.length === MAX_PLAYERS) {
+        clearMatchTimer();
+        startGame();
+      }
     }
   });
 
   ws.on("close", () => {
-    queue = queue.filter((p) => p !== ws);
+    queue = queue.filter((p) => p.socket !== ws);
     broadcastCount();
   });
 });
-
-// ===== FUNCIONES =====
 
 function startMatchTimer() {
   if (matchTimer) return;
 
   matchTimer = setTimeout(() => {
-    console.log("⏰ Tiempo agotado, rellenando con bots");
     fillWithBots();
     startGame();
   }, MATCH_TIMEOUT);
@@ -107,19 +107,18 @@ function clearMatchTimer() {
 
 function fillWithBots() {
   const missing = MAX_PLAYERS - queue.length;
-
   for (let i = 0; i < missing; i++) {
-    queue.push({ isBot: true });
+    queue.push({
+      isBot: true,
+      username: "Bot",
+    });
   }
-
-  console.log(`🤖 ${missing} bots añadidos`);
 }
 
 function broadcastCount() {
-  queue.forEach((player) => {
-    if (player.isBot) return;
-
-    player.send(
+  queue.forEach((p) => {
+    if (p.isBot) return;
+    p.socket.send(
       JSON.stringify({
         type: "count",
         current: queue.length,
@@ -130,7 +129,6 @@ function broadcastCount() {
 }
 
 function startGame() {
-  console.log("🎮 Iniciando partida");
   clearMatchTimer();
 
   const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
@@ -145,17 +143,20 @@ function startGame() {
     "impostor",
   ].sort(() => Math.random() - 0.5);
 
-  queue.forEach((player, index) => {
-    if (player.isBot) return;
+  const playersList = queue.map((p) => p.username);
+
+  queue.forEach((p, index) => {
+    if (p.isBot) return;
 
     const role = roles[index];
     const word = role === "impostor" ? impostorWord : detectiveWord;
 
-    player.send(
+    p.socket.send(
       JSON.stringify({
         type: "game_start",
         role,
         word,
+        players: playersList,
       })
     );
   });
