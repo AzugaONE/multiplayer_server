@@ -64,39 +64,42 @@ const WORD_PAIRS = [
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
-  ws.on("message", (message) => {
-    let data;
-    try {
-      data = JSON.parse(message);
-    } catch {
-      return;
-    }
+  ws.on("message", (msg) => {
+  let data;
 
-    // ===== MATCHMAKING =====
-    if (data.type === "join") {
-      if (!queue.includes(ws)) {
-        ws.username = data.username || "Jugador"; // Guardamos username
-        queue.push(ws);
-        broadcastCount();
+  try {
+    data = JSON.parse(msg);
+  } catch {
+    data = msg.toString();
+  }
 
-        if (queue.length === 1) startMatchTimer();
-      }
+  // === CHAT ===
+  if (data.type === "chat") {
+    queue.forEach((player) => {
+      if (player.isBot) return;
 
-      if (queue.length === MAX_PLAYERS) {
-        clearMatchTimer();
-        startGame();
-      }
-    }
+      player.send(
+        JSON.stringify({
+          type: "chat",
+          text: data.text,
+        })
+      );
+    });
+    return;
+  }
 
-    // ===== CHAT =====
-    if (data.type === "chat") {
-      broadcastChat(ws.username || "Jugador", data.text);
-    }
-  });
-
-  ws.on("close", () => {
-    queue = queue.filter((p) => p !== ws);
+  // === MATCHMAKING ===
+  if (!queue.includes(ws)) {
+    queue.push(ws);
     broadcastCount();
+
+    if (queue.length === 1) startMatchTimer();
+  }
+
+  if (queue.length === MAX_PLAYERS) {
+    clearMatchTimer();
+    startGame();
+  }
   });
 });
 
