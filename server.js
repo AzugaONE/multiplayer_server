@@ -71,6 +71,10 @@ wss.on("connection", (ws) => {
     } catch {
       return;
     }
+    
+    if (data.type === "leave_game") {
+      game.players = game.players.filter(p => p.ws !== ws);
+    }
 
     // ===== CHAT =====
     if (data.type === "chat") {
