@@ -65,124 +65,101 @@ wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
   ws.on("message", (msg) => {
-  let data;
+    let data;
+    try {
+      data = JSON.parse(msg);
+    } catch {
+      return;
+    }
 
-  try {
-    data = JSON.parse(msg);
-  } catch {
-    data = msg.toString();
-  }
+    // ===== CHAT =====
+    if (data.type === "chat") {
+      broadcastChat(ws.username || "Jugador", data.text);
+      return;
+    }
 
-  // === CHAT ===
-  if (data.type === "chat") {
-    queue.forEach((player) => {
-      if (player.isBot) return;
+    // ===== JOIN =====
+    if (data.type === "join") {
+      ws.username = data.username || "Jugador";
 
-      player.send(
-        JSON.stringify({
-          type: "chat",
-          text: data.text,
-        })
-      );
-    });
-    return;
-  }
+      if (!queue.includes(ws)) {
+        queue.push(ws);
+        broadcastCount();
 
-  // === MATCHMAKING ===
-  if (!queue.includes(ws)) {
-    queue.push(ws);
+        if (queue.length === 1) startMatchTimer();
+        if (queue.length === MAX_PLAYERS) {
+          clearMatchTimer();
+          startGame();
+        }
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    queue = queue.filter(p => p !== ws);
     broadcastCount();
-
-    if (queue.length === 1) startMatchTimer();
-  }
-
-  if (queue.length === MAX_PLAYERS) {
-    clearMatchTimer();
-    startGame();
-  }
   });
 });
 
 // ===== FUNCIONES =====
-
 function startMatchTimer() {
   if (matchTimer) return;
 
   matchTimer = setTimeout(() => {
-    console.log("⏰ Tiempo agotado, rellenando con bots");
     fillWithBots();
     startGame();
   }, MATCH_TIMEOUT);
 }
 
 function clearMatchTimer() {
-  if (matchTimer) {
-    clearTimeout(matchTimer);
-    matchTimer = null;
-  }
+  clearTimeout(matchTimer);
+  matchTimer = null;
 }
 
 function fillWithBots() {
   const missing = MAX_PLAYERS - queue.length;
   for (let i = 0; i < missing; i++) {
-    queue.push({ isBot: true, username: `BOT${i + 1}` });
+    queue.push({ isBot: true, username: `BOT ${i + 1}` });
   }
 }
 
 function broadcastCount() {
-  queue.forEach((player) => {
+  queue.forEach(player => {
     if (player.isBot) return;
-
-    player.send(
-      JSON.stringify({
-        type: "count",
-        current: queue.length,
-        max: MAX_PLAYERS,
-      })
-    );
+    player.send(JSON.stringify({
+      type: "count",
+      current: queue.length,
+      max: MAX_PLAYERS,
+    }));
   });
 }
 
 function broadcastChat(sender, text) {
-  queue.forEach((player) => {
+  queue.forEach(player => {
     if (player.isBot) return;
-
-    player.send(
-      JSON.stringify({
-        type: "chat",
-        player: sender,
-        text,
-      })
-    );
+    player.send(JSON.stringify({
+      type: "chat",
+      text: `${sender}: ${text}`,
+    }));
   });
 }
 
 function startGame() {
-  console.log("🎮 Iniciando partida");
-  clearMatchTimer();
-
   const pair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
-  const detectiveWord = pair[0];
-  const impostorWord = pair[1];
+  const roles = ["detective", "detective", "detective", "impostor", "impostor"]
+    .sort(() => Math.random() - 0.5);
 
-  const roles = ["detective", "detective", "detective", "impostor", "impostor"].sort(
-    () => Math.random() - 0.5
-  );
+  const playersList = queue.map(p => p.username || "Jugador");
 
   queue.forEach((player, index) => {
     if (player.isBot) return;
 
-    const role = roles[index];
-    const word = role === "impostor" ? impostorWord : detectiveWord;
-
-    player.send(
-      JSON.stringify({
-        type: "game_start",
-        role,
-        word,
-        players: queue.map(p => p.username || "Jugador"), // Lista de jugadores
-      })
-    );
+    player.send(JSON.stringify({
+      type: "game_start",
+      role: roles[index],
+      word: roles[index] === "impostor" ? pair[1] : pair[0],
+      players: playersList,
+    }));
   });
 
   queue = [];
