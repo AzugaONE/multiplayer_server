@@ -85,6 +85,7 @@ wss.on("connection", (ws) => {
     // ===== JOIN =====
     if (data.type === "join") {
       ws.username = data.username || "Jugador";
+      ws.character = data.character;
 
       if (!queue.includes(ws)) {
         queue.push(ws);
@@ -153,23 +154,24 @@ function startGame() {
   const roles = ["detective", "detective", "detective", "impostor", "impostor"]
     .sort(() => Math.random() - 0.5);
 
-  const playersList = queue.map((p, index) => {
-    return {
-      username: p.username || p.username,
-      character: p.character || (Math.floor(Math.random() * 12) + 1), // número de personaje random
-      role: roles[index],
-      isBot: !!p.isBot,
-    };
-  });
+  const playersList = queue.map((p, index) => ({
+    username: p.username,
+    character: p.character || Math.floor(Math.random() * 12) + 1,
+    role: roles[index],
+    isBot: !!p.isBot,
+  }));
 
   queue.forEach((player, index) => {
-    if (player.isBot) return; // los bots no necesitan WS
+    if (player.isBot) return;
 
     player.send(JSON.stringify({
       type: "game_start",
-      players: playersList,
+      role: roles[index],
+      word: roles[index] === "impostor" ? pair[1] : pair[0],
+      players: playersList, // 👈 LISTA
     }));
   });
 
   queue = [];
+  clearMatchTimer();
 }
