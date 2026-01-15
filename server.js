@@ -153,15 +153,20 @@ function startGame() {
   const roles = ["detective", "detective", "detective", "impostor", "impostor"]
     .sort(() => Math.random() - 0.5);
 
-  const playersList = queue.map(p => p.username || "Jugador");
+  const playersList = queue.map((p, index) => {
+    return {
+      username: p.username || p.username,
+      character: p.character || (Math.floor(Math.random() * 12) + 1), // número de personaje random
+      role: roles[index],
+      isBot: !!p.isBot,
+    };
+  });
 
   queue.forEach((player, index) => {
-    if (player.isBot) return;
+    if (player.isBot) return; // los bots no necesitan WS
 
     player.send(JSON.stringify({
       type: "game_start",
-      role: roles[index],
-      word: roles[index] === "impostor" ? pair[1] : pair[0],
       players: playersList,
     }));
   });
