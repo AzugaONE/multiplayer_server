@@ -7,7 +7,7 @@ console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
 // ===== CONFIG =====
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 10 * 1000;
+const MATCH_TIMEOUT = 10 * 1000; // 10 segundos para llenar la partida
 
 let queue = [];
 let matchTimer = null;
@@ -60,7 +60,7 @@ const WORD_PAIRS = [
   ["APROBADO", "JALADO"]
 ];
 
-// ===== CONNECTION =====
+// ===== CONEXIONES =====
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
@@ -71,9 +71,11 @@ wss.on("connection", (ws) => {
     } catch {
       return;
     }
-    
+
+    // ===== LEAVE GAME =====
     if (data.type === "leave_game") {
-      game.players = game.players.filter(p => p.ws !== ws);
+      queue = queue.filter(p => p !== ws);
+      broadcastCount();
     }
 
     // ===== CHAT =====
@@ -85,7 +87,7 @@ wss.on("connection", (ws) => {
     // ===== JOIN =====
     if (data.type === "join") {
       ws.username = data.username || "Jugador";
-      ws.character = data.character;
+      ws.character = data.character || Math.floor(Math.random() * 12) + 1;
 
       if (!queue.includes(ws)) {
         queue.push(ws);
@@ -124,7 +126,12 @@ function clearMatchTimer() {
 function fillWithBots() {
   const missing = MAX_PLAYERS - queue.length;
   for (let i = 0; i < missing; i++) {
-    queue.push({ isBot: true, username: `BOT ${i + 1}` });
+    queue.push({
+      isBot: true,
+      username: `BOT ${i + 1}`,
+      character: Math.floor(Math.random() * 12) + 1,
+      send: () => {}, // dummy send para evitar errores
+    });
   }
 }
 
@@ -156,7 +163,7 @@ function startGame() {
 
   const playersList = queue.map((p, index) => ({
     username: p.username,
-    character: p.character || Math.floor(Math.random() * 12) + 1,
+    character: p.character,
     role: roles[index],
     isBot: !!p.isBot,
   }));
@@ -168,7 +175,7 @@ function startGame() {
       type: "game_start",
       role: roles[index],
       word: roles[index] === "impostor" ? pair[1] : pair[0],
-      players: playersList, // 👈 LISTA
+      players: playersList,
     }));
   });
 
