@@ -3,11 +3,11 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 3000;
 const wss = new WebSocket.Server({ port: PORT });
 
-console.log("🟢 Servidor de juego iniciado en puerto", PORT);
+console.log("🟢 Servidor WebSocket iniciado en puerto", PORT);
 
 // ===== CONFIG =====
 const MAX_PLAYERS = 5;
-const MATCH_TIMEOUT = 10 * 1000;
+const MATCH_TIMEOUT = 10 * 1000; // 10 segundos para llenar la partida
 
 let queue = [];
 let matchTimer = null;
@@ -60,7 +60,7 @@ const WORD_PAIRS = [
   ["APROBADO", "JALADO"]
 ];
 
-// ===== CONNECTION =====
+// ===== CONEXIONES =====
 wss.on("connection", (ws) => {
   console.log("🔵 Jugador conectado");
 
@@ -72,18 +72,26 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    // ===== LEAVE GAME =====
     if (data.type === "leave_game") {
-      queue = queue.filter(p => p.ws !== ws);
-      console.log(`Jugador salió. Jugadores en cola: ${queue.length}`);
+      queue = queue.filter(p => p !== ws);
+      broadcastCount();
     }
 
+    // ===== CHAT =====
+    if (data.type === "chat") {
+      broadcastChat(ws.username || "Jugador", data.text);
+      return;
+    }
+
+    // ===== JOIN =====
     if (data.type === "join") {
       ws.username = data.username || "Jugador";
-      ws.character = data.character;
+      ws.character = data.character || Math.floor(Math.random() * 12) + 1;
 
       if (!queue.includes(ws)) {
         queue.push(ws);
-        console.log(`Jugador unido: ${ws.username}. Cola actual: ${queue.length}`);
+        broadcastCount();
 
         if (queue.length === 1) startMatchTimer();
         if (queue.length === MAX_PLAYERS) {
@@ -96,7 +104,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     queue = queue.filter(p => p !== ws);
-    console.log("Jugador desconectado. Cola actual:", queue.length);
+    broadcastCount();
   });
 });
 
@@ -118,8 +126,34 @@ function clearMatchTimer() {
 function fillWithBots() {
   const missing = MAX_PLAYERS - queue.length;
   for (let i = 0; i < missing; i++) {
-    queue.push({ isBot: true, username: `BOT ${i + 1}` });
+    queue.push({
+      isBot: true,
+      username: `BOT ${i + 1}`,
+      character: Math.floor(Math.random() * 12) + 1,
+      send: () => {}, // dummy send para evitar errores
+    });
   }
+}
+
+function broadcastCount() {
+  queue.forEach(player => {
+    if (player.isBot) return;
+    player.send(JSON.stringify({
+      type: "count",
+      current: queue.length,
+      max: MAX_PLAYERS,
+    }));
+  });
+}
+
+function broadcastChat(sender, text) {
+  queue.forEach(player => {
+    if (player.isBot) return;
+    player.send(JSON.stringify({
+      type: "chat",
+      text: `${sender}: ${text}`,
+    }));
+  });
 }
 
 function startGame() {
@@ -129,7 +163,7 @@ function startGame() {
 
   const playersList = queue.map((p, index) => ({
     username: p.username,
-    character: p.character || Math.floor(Math.random() * 12) + 1,
+    character: p.character,
     role: roles[index],
     isBot: !!p.isBot,
   }));
@@ -145,7 +179,6 @@ function startGame() {
     }));
   });
 
-  console.log("✅ Partida iniciada con jugadores:", playersList.map(p => p.username));
   queue = [];
   clearMatchTimer();
 }
